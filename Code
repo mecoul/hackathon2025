@@ -1,0 +1,242 @@
+Apps Script 
+
+function mergeSheetsFromLinks() {
+  var mainSheetUrl = 'masterlink'; // Replace with the link to your main sheet
+  var sheetLinks = [
+    'linke1',
+    'link2',
+    'link3'
+  ];
+  var mainSheetSpreadsheet = SpreadsheetApp.openByUrl(mainSheetUrl);
+  var mainSheet = mainSheetSpreadsheet.getSheetByName('Sheet1');
+  var lastRow = 2;
+
+  var rangeToClear = mainSheet.getRange('A2:R');
+  rangeToClear.clear();
+
+  for (var i = 0; i < sheetLinks.length; i++) {
+    var sourceSpreadsheet = SpreadsheetApp.openByUrl(sheetLinks[i]);
+    var sourceSheet = sourceSpreadsheet.getSheetByName('Sheet1');
+
+    // Check if the 'Sheet1' exists in the source spreadsheet
+    if (!sourceSheet) {
+      Logger.log("Sheet1 not found in " + sheetLinks[i]);
+      continue;
+    }
+
+    var data = sourceSheet.getRange('A2:R').getValues();
+
+    data = data.filter(row => row.some(cell => cell !== ''));
+
+    if (data.length > 0) {
+      mainSheet.getRange(lastRow, 1, data.length, data[0].length).setValues(data); // Append data to main sheet
+      lastRow += data.length; // Update the last row of the main sheet
+    }
+  }
+  Logger.log('Merging complete');
+}
+
+Python 
+
+
+# Import libraries
+import xgboost as xgb
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score, roc_auc_score
+import shap
+import gspread
+from google.colab import files
+from oauth2client.service_account import ServiceAccountCredentials
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+from google.colab import drive
+from google.colab import auth
+from oauth2client.client import GoogleCredentials
+drive.mount('/content/drive')
+auth.authenticate_user()
+gauth = GoogleAuth()
+gauth.credentials = GoogleCredentials.get_application_default()
+drive = GoogleDrive(gauth)
+
+
+
+
+
+# Link the API Json
+file_id = 'hidden id'
+downloaded = drive.CreateFile({'id': file_id})
+downloaded.GetContentFile('credentials.json')
+
+# Define the scope
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+
+# Provide the path to the JSON file you uploaded
+creds = ServiceAccountCredentials.from_json_keyfile_name('hidden json file', scope)
+
+# Authorize the client
+gc = gspread.authorize(creds)
+
+####################################################
+            ### Creating The Data ###
+###################################################
+
+# Define the number of rows
+num_rows = 5000
+
+# Generate random data with logic
+data = {
+    'Number of Missed Classes': np.random.randint(0, 31, num_rows),
+    'CGPA': np.round(np.random.uniform(0, 4, num_rows), 2),
+    'Number of Social Activities': np.random.randint(0, 6, num_rows),
+    'Number of Missed Meals': np.random.randint(0, 101, num_rows),
+    'Number of Volunteering in Class': np.random.randint(0, 101, num_rows),
+    'Number of Missed Homework Assignments': np.random.randint(0, 21, num_rows),
+    'Number of Physical Fights': np.random.randint(0, 5, num_rows),
+    'Number of Times Falling Asleep in Class': np.random.randint(0, 10, num_rows),
+    'Number of Times Leaving the Class': np.random.randint(5, 100, num_rows),
+    'Physical Activity per Week': np.random.randint(0, 11, num_rows),
+    'Number of Failed Classes': np.random.randint(0, 6, num_rows),
+    'Late Arrival': np.random.randint(0, 101, num_rows),
+    'Class Participation Rate': np.random.randint(0, 11, num_rows),
+    'Number of Detention Times': np.random.randint(0, 11, num_rows)
+}
+
+# Convert the dictionary to a DataFrame
+df = pd.DataFrame(data)
+
+# Introduce correlation logic for 'Not Graduating'
+def determine_not_graduating(row, threshold=5):
+    risk_factors = ['Number of Missed Classes', 'CGPA', 'Number of Missed Meals',
+                    'Number of Volunteering in Class', 'Number of Missed Homework Assignments',
+                    'Number of Physical Fights', 'Number of Times Falling Asleep in Class',
+                    'Number of Times Leaving the Class', 'Physical Activity per Week',
+                    'Number of Failed Classes', 'Late Arrival', 'Class Participation Rate',
+                    'Number of Detention Times']
+
+    multipliers = np.random.uniform(0.5, 1.5, len(risk_factors))
+
+    score = (
+        (row['Number of Missed Classes'] / 30) * multipliers[0] +
+        (4 - row['CGPA']) * multipliers[1] +
+        row['Number of Missed Meals'] / 100 * multipliers[2] +
+        (100 - row['Number of Volunteering in Class']) / 100 * multipliers[3] +
+        row['Number of Missed Homework Assignments'] / 20 * multipliers[4] +
+        row['Number of Physical Fights'] / 5 * multipliers[5] +
+        row['Number of Times Falling Asleep in Class'] / 10 * multipliers[6] +
+        row['Number of Times Leaving the Class'] / 10 * multipliers[7] +
+        (10 - row['Physical Activity per Week']) / 10 * multipliers[8] +
+        row['Number of Failed Classes'] / 5 * multipliers[9] +
+        row['Late Arrival'] / 100 * multipliers[10] +
+        (10 - row['Class Participation Rate']) / 10 * multipliers[11] +
+        row['Number of Detention Times'] / 10 * multipliers[12]
+    )
+
+    return 'Yes' if score >= threshold else 'No'
+
+# Apply the function with a dynamic threshold
+threshold = 5
+df['Not Graduating'] = df.apply(lambda row: determine_not_graduating(row, threshold), axis=1)
+
+# Adjust threshold dynamically to balance the distribution
+while df['Not Graduating'].value_counts().get('Yes', 0) > 1500:
+    threshold += 0.1
+    df['Not Graduating'] = df.apply(lambda row: determine_not_graduating(row, threshold), axis=1)
+
+####################################################
+                   ### Model ###
+###################################################
+
+data = df
+
+data['Not Graduating'] = data['Not Graduating'].map({'Yes': 1, 'No': 0})
+
+# Split data into features (X) and target (y)
+X = data.drop('Not Graduating', axis=1)
+y = data['Not Graduating']
+
+# Setting the seed
+Seed = 99
+
+# Split data into training and testing sets, training=80%, testing=20% of the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=Seed)
+
+# Setting the parameters
+param_grid = {
+    'max_depth': [3, 5],
+    'eta': [0.01, 0.1, 0.3],
+    'subsample': [0.6, 0.8],
+    'colsample_bytree': [0.6, 0.8, 0.9]
+}
+
+# Set the number of folds for cross-validation
+number_of_folds = 8
+
+# Create the GridSearchCV object
+grid_search = GridSearchCV(estimator=xgb.XGBClassifier(),
+                           param_grid=param_grid,
+                           scoring='roc_auc',
+                           n_jobs=-1,
+                           cv=number_of_folds,
+                           verbose=1)
+
+# Fit the model
+grid_search.fit(X_train, y_train)
+
+# Get the best parameters
+best_params = grid_search.best_params_
+print(f"Best parameters: {best_params}")
+
+# Train the model with the best parameters
+model = xgb.XGBClassifier(**best_params)
+model.fit(X_train, y_train)
+
+# Calculate AUC value
+y_pred_proba = model.predict_proba(X_test)[:, 1]
+auc = roc_auc_score(y_test, y_pred_proba)
+print(f"AUC: {auc}")
+
+# SHAP values
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X)
+
+# Generate SHAP summary plot
+shap.summary_plot(shap_values, X)
+
+# Open the Google Sheet by its URL
+sheet_url = 'hidden google sheets link'
+sheet = gc.open_by_url(sheet_url).sheet1
+
+# Function to predict and update Google Sheets
+def predict_and_update(sheet):
+    # Get the data from the sheet
+    rows = sheet.get_all_values()
+    sheet_data = pd.DataFrame(rows[1:], columns=rows[0])
+
+    # Select columns E to R (Columns A to D are student information)
+    sheet_data = sheet_data.iloc[:, 4:18]
+
+    # Ensure the data types are correct
+    sheet_data = sheet_data.astype(float)
+
+    # Convert data to a compatible format
+    sheet_data = sheet_data.applymap(lambda x: float(x))
+
+    # Make predictions only if all cells in the row are filled
+    predictions = []
+    for _, row in sheet_data.iterrows():
+        if not row.isnull().any():
+            pred = float(model.predict_proba(row.values.reshape(1, -1))[:, 1][0])
+            predictions.append(pred)
+        else:
+            predictions.append(None)
+
+    # Update the Google Sheet with the predictions in Column S
+    for i, pred in enumerate(predictions):
+        if pred is not None:
+            sheet.update_cell(i + 2, 19, pred)
+
+# Predict and update Google Sheets
+predict_and_update(sheet)
+
